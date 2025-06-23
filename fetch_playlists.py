@@ -13,14 +13,21 @@ curators_playlists = pd.DataFrame(columns=['curator', 'playlist_id'])
 
 
 def fetch_spotify_playlists(client_id, client_secret, limit=100, startfrom=None):
+    """
+    Fetch playlists from Spotify for a list of curators and store them in CSV files.
+    
+    :param client_id: Spotify API client ID.
+    :param client_secret: Spotify API client secret.
+    :param limit: Number of playlists to fetch per request (default is 100).
+    :param startfrom: Curator username to start fetching from (default is None, which
+                     means start from the beginning).
+    """
     global playlists, artists, tracks, playlists_tracks, tracks_artists, curators_playlists
     
     sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
         client_id=client_id,
         client_secret=client_secret
     ))
-
-    # patch_spotipy_rate_limit_logging(sp)
     
     # Get the list of curators
     curators = pd.read_csv('dataset/curators.csv')['username']
@@ -29,6 +36,7 @@ def fetch_spotify_playlists(client_id, client_secret, limit=100, startfrom=None)
         # Filter curators starting from a specific index
         index = curators[curators == startfrom].index[0]
         curators = curators[index:]
+        # initialize dataframes from existing CSV files
         playlists = pd.read_csv('dataset/playlists.csv')
         artists = pd.read_csv('dataset/artists.csv')
         tracks = pd.read_csv('dataset/tracks.csv')
@@ -43,7 +51,6 @@ def fetch_spotify_playlists(client_id, client_secret, limit=100, startfrom=None)
         offset = 0
         while True:
             response = safe_request(sp.user_playlists, user=curator, limit=limit, offset=offset)
-            # response = sp.user_playlists(user=curator, limit=limit, offset=offset)
             if response == {}:
                 break
             items = response.get('items', [])
@@ -68,7 +75,6 @@ def fetch_spotify_playlists(client_id, client_secret, limit=100, startfrom=None)
                             sp.playlist, playlist['id'], 
                             fields="followers.total"
                         )
-                        # details = sp.playlist(playlist['id'], fields="followers,total")
                         if details == {}:
                             continue
 
@@ -101,8 +107,6 @@ def fetch_spotify_playlists(client_id, client_secret, limit=100, startfrom=None)
         tracks_artists.to_csv('dataset/tracks_artists.csv', index=False)
         curators_playlists.to_csv('dataset/curators_playlists.csv', index=False)
 
-    # return playlists
-
 
 def handle_new_playlist(playlist, sp):
     """
@@ -110,14 +114,11 @@ def handle_new_playlist(playlist, sp):
     
     :param playlist: Dictionary containing playlist details.
     :param sp: An authenticated Spotipy client instance for interacting with the Spotify API.
-    :return: track DataFrame, artists DataFrame, playlists_tracks DataFrame,
-             tracks_artists DataFrame containing associations.
     """
     global artists, tracks, playlists_tracks, tracks_artists
     
     # Retrieve all tracks in the playlist
     tracks_response = safe_request(sp.playlist_tracks, playlist['id'])
-    # tracks_response = sp.playlist_tracks(playlist['id'], fields='items(track(id,name,artists))')
     if tracks_response == {}:
         return
     
@@ -152,11 +153,8 @@ def handle_new_track(track):
     Handles the processing of a new track using the provided Spotify client.
     
     :param track: A dictionary containing information about the track to be processed.
-    :param sp: An authenticated Spotipy client instance for interacting with the Spotify API.
-    :return: artists DataFrame and tracks_artists DataFrame containing associations.
     """
     global artists, tracks_artists
-    # print(f"\t\tProcessing track: {track['name']} ({track['id']})")
 
     for artist in track.get('artists', []):
         if artist.get('id') and artist.get('name'):
@@ -171,10 +169,17 @@ def handle_new_track(track):
                 tracks_artists,
                 pd.DataFrame([{'track_id': track['id'], 'artist_id': artist['id']}])
             ], ignore_index=True)
-    # return artists, tracks_artists
     
 
 def safe_request(func, *args, **kwargs):
+    """
+    Safely make a request to the Spotify API, handling rate limits and errors.
+    
+    :param func: The function to call (e.g., sp.user_playlists, sp.playlist).
+    :param args: Positional arguments for the function.
+    :param kwargs: Keyword arguments for the function.
+    :return: The response from the Spotify API or an empty dictionary if an error occurs.
+    """
     while True:
         try:
             return func(*args, **kwargs)
